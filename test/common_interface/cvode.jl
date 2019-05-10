@@ -76,6 +76,13 @@ sol8 = solve(prob,CVODE_BDF(linear_solver=:TFQMR))
 @test isapprox(sol1[end],sol7[end],rtol=1e-3)
 @test isapprox(sol1[end],sol8[end],rtol=1e-3)
 #@test isapprox(sol1[end],sol9[end],rtol=1e-3)
+
+# Test identity preconditioner
+global prec_used = false
+sol4 = solve(prob,CVODE_BDF(linear_solver=:GMRES, prec_side = 3, prec=(z,r,p,t,y,fy,gamma,delta,lr)->(global prec_used=true;z.=r)))
+@test isapprox(sol1[end],sol4[end],rtol=1e-3)
+@test prec_used
+
 # Backwards
 prob = deepcopy(prob_ode_2Dlinear)
 prob2 = ODEProblem(prob.f,prob.u0,(1.0,0.0),1.01)

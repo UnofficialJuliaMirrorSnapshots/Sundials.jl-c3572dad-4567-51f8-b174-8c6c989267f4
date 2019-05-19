@@ -31,6 +31,8 @@ function DiffEqBase.__init(
     save_start = save_everystep || isempty(saveat) || typeof(saveat) <: Number ? true : prob.tspan[1] in saveat,
     save_end = save_everystep || isempty(saveat) || typeof(saveat) <: Number ? true : prob.tspan[2] in saveat,
     dense = save_everystep && isempty(saveat),
+    progress=false,progress_name="ODE",
+    progress_message = DiffEqBase.ODE_DEFAULT_PROG_MESSAGE,
     save_timeseries = nothing,
     advance_to_tstop = false,stop_at_next_tstop=false,
     userdata=nothing,
@@ -57,6 +59,8 @@ function DiffEqBase.__init(
     if typeof(reltol) <: AbstractArray
         error("Sundials only allows scalar reltol.")
     end
+
+    progress && @logmsg(-1,progress_name,_id=_id = :Sundials,progress=0)
 
     callbacks_internal = CallbackSet(callback,prob.callback)
 
@@ -265,9 +269,13 @@ function DiffEqBase.__init(
                    calculate_error = false)
     opts = DEOptions(saveat_internal,tstops_internal,save_everystep,dense,
                      timeseries_errors,dense_errors,save_on,save_end,
-                     callbacks_internal,abstol,reltol,verbose,advance_to_tstop,stop_at_next_tstop)
-    CVODEIntegrator(u0,prob.p,t0,t0,mem,_LS,_A,sol,alg,f!,userfun,jac,opts,
+                     callbacks_internal,abstol,reltol,verbose,advance_to_tstop,stop_at_next_tstop,
+                     progress,progress_name,progress_message)
+    integrator = CVODEIntegrator(u0,prob.p,t0,t0,mem,_LS,_A,sol,alg,f!,userfun,jac,opts,
                        tout,tdir,sizeu,false,tmp,uprev,Cint(flag),false,0,0.)
+
+    initialize_callbacks!(integrator)
+    integrator
 end # function solve
 
 function DiffEqBase.__init(
@@ -285,6 +293,8 @@ function DiffEqBase.__init(
     save_everystep=isempty(saveat), dense = save_everystep,
     save_on = true, save_start = true, save_end = true,
     save_timeseries = nothing,
+    progress=false,progress_name="ODE",
+    progress_message = DiffEqBase.ODE_DEFAULT_PROG_MESSAGE,
     advance_to_tstop = false,stop_at_next_tstop=false,
     userdata=nothing,
     alias_u0=false,
@@ -306,6 +316,8 @@ function DiffEqBase.__init(
     if typeof(reltol) <: AbstractArray
         error("Sundials only allows scalar reltol.")
     end
+
+    progress && @logmsg(-1,progress_name,_id=_id = :Sundials,progress=0)
 
     callbacks_internal = CallbackSet(callback,prob.callback)
 
@@ -631,9 +643,13 @@ function DiffEqBase.__init(
                    calculate_error = false)
     opts = DEOptions(saveat_internal,tstops_internal,save_everystep,dense,
                      timeseries_errors,dense_errors,save_on,save_end,
-                     callbacks_internal,abstol,reltol,verbose,advance_to_tstop,stop_at_next_tstop)
-    ARKODEIntegrator(utmp,prob.p,t0,t0,mem,_LS,_A,_MLS,_M,sol,alg,f!,userfun,jac,opts,
+                     callbacks_internal,abstol,reltol,verbose,advance_to_tstop,stop_at_next_tstop,
+                     progress,progress_name,progress_message)
+    integrator = ARKODEIntegrator(utmp,prob.p,t0,t0,mem,_LS,_A,_MLS,_M,sol,alg,f!,userfun,jac,opts,
                        tout,tdir,sizeu,false,tmp,uprev,Cint(flag),false,0,0.)
+
+    initialize_callbacks!(integrator)
+    integrator
 end # function solve
 
 function tstop_saveat_disc_handling(tstops,saveat,tdir,tspan,tType)
@@ -687,6 +703,8 @@ function DiffEqBase.__init(
     dense_errors = false,
     save_everystep=isempty(saveat), dense=save_everystep,
     save_timeseries=nothing, save_end = true,
+    progress=false,progress_name="ODE",
+    progress_message = DiffEqBase.ODE_DEFAULT_PROG_MESSAGE,
     advance_to_tstop = false, stop_at_next_tstop = false,
     userdata=nothing,
     kwargs...) where {uType, duType, tupType, isinplace, LinearSolver}
@@ -707,6 +725,8 @@ function DiffEqBase.__init(
     if typeof(reltol) <: AbstractArray
         error("Sundials only allows scalar reltol.")
     end
+
+    progress && @logmsg(-1,progress_name,_id=_id = :Sundials,progress=0)
 
     callbacks_internal = CallbackSet(callback,prob.callback)
 
@@ -935,10 +955,14 @@ function DiffEqBase.__init(
 
     opts = DEOptions(saveat_internal,tstops_internal,save_everystep,dense,
                     timeseries_errors,dense_errors,save_on,save_end,
-                    callbacks_internal,abstol,reltol,verbose,advance_to_tstop,stop_at_next_tstop)
+                    callbacks_internal,abstol,reltol,verbose,advance_to_tstop,stop_at_next_tstop,
+                    progress,progress_name,progress_message)
 
-    IDAIntegrator(utmp,dutmp,prob.p,t0,t0,mem,_LS,_A,sol,alg,f!,userfun,jac,opts,
+    integrator = IDAIntegrator(utmp,dutmp,prob.p,t0,t0,mem,_LS,_A,sol,alg,f!,userfun,jac,opts,
                    tout,tdir,sizeu,sizedu,false,tmp,uprev,Cint(flag),false,0,0.)
+
+    initialize_callbacks!(integrator)
+    integrator
 end # function solve
 
 ## Common calls
@@ -953,13 +977,34 @@ end
 
 function solver_step(integrator::CVODEIntegrator,tstop)
     integrator.flag = CVode(integrator.mem, tstop, integrator.u, integrator.tout, CV_ONE_STEP)
+    if integrator.opts.progress
+      @logmsg(-1,
+      integrator.opts.progress_name,
+      _id = :Sundials,
+      message=integrator.opts.progress_message(integrator.dt,integrator.u,integrator.p,integrator.t),
+      progress=integrator.t/integrator.sol.prob.tspan[2])
+    end
 end
 function solver_step(integrator::ARKODEIntegrator,tstop)
     integrator.flag = ARKode(integrator.mem, tstop, integrator.u, integrator.tout, ARK_ONE_STEP)
+    if integrator.opts.progress
+      @logmsg(-1,
+      integrator.opts.progress_name,
+      _id = :Sundials,
+      message=integrator.opts.progress_message(integrator.dt,integrator.u,integrator.p,integrator.t),
+      progress=integrator.t/integrator.sol.prob.tspan[2])
+    end
 end
 function solver_step(integrator::IDAIntegrator,tstop)
     integrator.flag = IDASolve(integrator.mem, tstop, integrator.tout,
                                integrator.u, integrator.du, IDA_ONE_STEP)
+    if integrator.opts.progress
+      @logmsg(-1,
+      integrator.opts.progress_name,
+      _id = :Sundials,
+      message=integrator.opts.progress_message(integrator.dt,integrator.u,integrator.p,integrator.t),
+      progress=integrator.t/integrator.sol.prob.tspan[2])
+    end
 end
 
 function set_stop_time(integrator::CVODEIntegrator,tstop)
@@ -1005,6 +1050,14 @@ function DiffEqBase.solve!(integrator::AbstractSundialsIntegrator)
           integrator(integrator.u,integrator.t,Val{1})
           save_value!(integrator.sol.interp.du,integrator.u,uType,integrator.sizeu)
         end
+    end
+
+    if integrator.opts.progress
+      @logmsg(-1,
+      integrator.opts.progress_name,
+      _id = :Sundials,
+      message=integrator.opts.progress_message(integrator.dt,integrator.u,integrator.p,integrator.t),
+      progress="done")
     end
 
     fill_destats!(integrator)
@@ -1105,4 +1158,28 @@ function fill_destats!(integrator::IDAIntegrator)
         IDADlsGetNumJacEvals(mem,tmp)
         destats.njacs = tmp[]
     end
+end
+
+function initialize_callbacks!(integrator, initialize_save = true)
+  t = integrator.t
+  u = integrator.u
+  callbacks = integrator.opts.callback
+  integrator.u_modified = true
+
+  u_modified = initialize!(callbacks,u,t,integrator)
+
+  # if the user modifies u, we need to fix current values
+  if u_modified
+
+    handle_callback_modifiers!(integrator)
+
+    if initialize_save &&
+      (any((c)->c.save_positions[2],callbacks.discrete_callbacks) ||
+      any((c)->c.save_positions[2],callbacks.continuous_callbacks))
+      savevalues!(integrator,true)
+    end
+  end
+
+  # reset this as it is now handled so the integrators should proceed as normal
+  integrator.u_modified = false
 end

@@ -5,7 +5,7 @@ abstract type SundialsODEAlgorithm{Method,LinearSolver} <: DiffEqBase.AbstractOD
 abstract type SundialsDAEAlgorithm{LinearSolver} <: DiffEqBase.AbstractDAEAlgorithm end
 
 # ODE Algorithms
-struct CVODE_BDF{Method,LinearSolver,P} <: SundialsODEAlgorithm{Method,LinearSolver}
+struct CVODE_BDF{Method,LinearSolver,P,PS} <: SundialsODEAlgorithm{Method,LinearSolver}
     jac_upper::Int
     jac_lower::Int
     stored_upper::Int
@@ -17,6 +17,7 @@ struct CVODE_BDF{Method,LinearSolver,P} <: SundialsODEAlgorithm{Method,LinearSol
     max_nonlinear_iters::Int
     max_convergence_failures::Int
     prec::P
+    psetup::PS
     prec_side::Int
 end
 Base.@pure function CVODE_BDF(;method=:Newton,linear_solver=:Dense,
@@ -27,24 +28,25 @@ Base.@pure function CVODE_BDF(;method=:Newton,linear_solver=:Dense,
                     max_error_test_failures = 7,
                     max_nonlinear_iters = 3,
                     max_convergence_failures = 10,
-                    prec = nothing, prec_side = 0)
+                    prec = nothing, psetup = nothing, prec_side = 0)
     if linear_solver == :Band && (jac_upper==0 || jac_lower==0)
         error("Banded solver must set the jac_upper and jac_lower")
     end
     if linear_solver != :None && linear_solver != :Diagonal && linear_solver != :Dense && linear_solver != :Band && linear_solver != :BCG && linear_solver != :GMRES && linear_solver != :FGMRES && linear_solver != :PCG && linear_solver != :TFQMR && linear_solver != :KLU
         error("Linear solver choice not accepted.")
     end
-    CVODE_BDF{method,linear_solver, typeof(prec)}(jac_upper,jac_lower,
+    CVODE_BDF{method,linear_solver, typeof(prec), typeof(psetup)}(
+                                    jac_upper,jac_lower,
                                     stored_upper,krylov_dim,
                                     stability_limit_detect,
                                     max_hnil_warns,
                                     max_order,
                                     max_error_test_failures,
                                     max_nonlinear_iters,
-                                    max_convergence_failures, prec, prec_side)
+                                    max_convergence_failures, prec, psetup, prec_side)
 end
 
-struct CVODE_Adams{Method,LinearSolver,P} <: SundialsODEAlgorithm{Method,LinearSolver}
+struct CVODE_Adams{Method,LinearSolver,P,PS} <: SundialsODEAlgorithm{Method,LinearSolver}
     jac_upper::Int
     jac_lower::Int
     stored_upper::Int
@@ -56,6 +58,7 @@ struct CVODE_Adams{Method,LinearSolver,P} <: SundialsODEAlgorithm{Method,LinearS
     max_nonlinear_iters::Int
     max_convergence_failures::Int
     prec::P
+    psetup::PS
     prec_side::Int
 end
 Base.@pure function CVODE_Adams(;method=:Functional,linear_solver=:None,
@@ -68,7 +71,7 @@ Base.@pure function CVODE_Adams(;method=:Functional,linear_solver=:None,
                       max_error_test_failures = 7,
                       max_nonlinear_iters = 3,
                       max_convergence_failures = 10,
-                      prec = nothing, prec_side = 0
+                      prec = nothing, psetup = nothing, prec_side = 0
                       )
     if linear_solver == :Band && (jac_upper==0 || jac_lower==0)
         error("Banded solver must set the jac_upper and jac_lower")
@@ -76,17 +79,19 @@ Base.@pure function CVODE_Adams(;method=:Functional,linear_solver=:None,
     if linear_solver != :None && linear_solver != :Diagonal && linear_solver != :Dense && linear_solver != :Band && linear_solver != :BCG && linear_solver != :GMRES && linear_solver != :FGMRES && linear_solver != :PCG && linear_solver != :TFQMR
         error("Linear solver choice not accepted.")
     end
-    CVODE_Adams{method,linear_solver,typeof(prec)}(jac_upper,jac_lower,
+    CVODE_Adams{method,linear_solver,typeof(prec),typeof(psetup)}(
+                                      jac_upper,jac_lower,
                                       stored_upper,krylov_dim,
                                       stability_limit_detect,
                                       max_hnil_warns,
                                       max_order,
                                       max_error_test_failures,
                                       max_nonlinear_iters,
-                                      max_convergence_failures,prec,prec_side)
+                                      max_convergence_failures,prec,psetup,
+                                      prec_side)
 end
 
-struct ARKODE{Method,LinearSolver,MassLinearSolver,T,T1,T2,P} <: SundialsODEAlgorithm{Method,LinearSolver}
+struct ARKODE{Method,LinearSolver,MassLinearSolver,T,T1,T2,P,PS} <: SundialsODEAlgorithm{Method,LinearSolver}
     stiffness::T
     jac_upper::Int
     jac_lower::Int
@@ -112,6 +117,7 @@ struct ARKODE{Method,LinearSolver,MassLinearSolver,T,T1,T2,P} <: SundialsODEAlgo
     itable::T1
     etable::T2
     prec::P
+    psetup::PS
     prec_side::Int
 end
 
@@ -136,7 +142,7 @@ Base.@pure function ARKODE(stiffness=Implicit();method=:Newton,linear_solver=:De
                     adaptivity_method = 0,
                     itable = nothing,
                     etable = nothing,
-                    prec = nothing, prec_side = 0
+                    prec = nothing, psetup = nothing, prec_side = 0
                     )
     if linear_solver == :Band && (jac_upper==0 || jac_lower==0)
         error("Banded solver must set the jac_upper and jac_lower")
@@ -150,7 +156,7 @@ Base.@pure function ARKODE(stiffness=Implicit();method=:Newton,linear_solver=:De
     ARKODE{method,linear_solver,mass_linear_solver,
                     typeof(stiffness),
                     typeof(itable),typeof(etable),
-                    typeof(prec)}(
+                    typeof(prec),typeof(psetup)}(
                                     stiffness,
                                     jac_upper,jac_lower,
                                     stored_upper,
@@ -172,11 +178,11 @@ Base.@pure function ARKODE(stiffness=Implicit();method=:Newton,linear_solver=:De
                                     msbp,
                                     itable,
                                     etable,
-                                    prec, prec_side)
+                                    prec, psetup, prec_side)
 end
 
 # DAE Algorithms
-struct IDA{LinearSolver,P} <: SundialsDAEAlgorithm{LinearSolver}
+struct IDA{LinearSolver,P,PS} <: SundialsDAEAlgorithm{LinearSolver}
   jac_upper::Int
   jac_lower::Int
   stored_upper::Int
@@ -194,6 +200,7 @@ struct IDA{LinearSolver,P} <: SundialsDAEAlgorithm{LinearSolver}
   use_linesearch_ic::Bool
   init_all::Bool
   prec::P
+  psetup::PS
   prec_side::Int
 end
 Base.@pure function IDA(;linear_solver=:Dense,jac_upper=0,jac_lower=0,
@@ -211,14 +218,15 @@ Base.@pure function IDA(;linear_solver=:Dense,jac_upper=0,jac_lower=0,
                         use_linesearch_ic = true,
                         init_all = false,
                         max_convergence_failures = 10,
-                        prec = nothing, prec_side = 0)
+                        prec = nothing, psetup = nothing, prec_side = 0)
   if linear_solver == :Band && (jac_upper==0 || jac_lower==0)
       error("Banded solver must set the jac_upper and jac_lower")
   end
   if linear_solver != :Dense && linear_solver != :Band && linear_solver != :BCG && linear_solver != :GMRES && linear_solver != :FGMRES && linear_solver != :PCG && linear_solver != :TFQMR && linear_solver != :KLU
       error("Linear solver choice not accepted.")
   end
-  IDA{linear_solver,typeof(prec)}(jac_upper,jac_lower,stored_upper,krylov_dim,
+  IDA{linear_solver,typeof(prec),typeof(psetup)}(
+                      jac_upper,jac_lower,stored_upper,krylov_dim,
                       max_order,
                       max_error_test_failures,
                       nonlinear_convergence_coefficient,
@@ -230,7 +238,7 @@ Base.@pure function IDA(;linear_solver=:Dense,jac_upper=0,jac_lower=0,
                       max_num_iters_ic,
                       max_num_backs_ic,
                       use_linesearch_ic,
-                      init_all,prec, prec_side)
+                      init_all,prec, psetup, prec_side)
 end
 
 method_choice(alg::SundialsODEAlgorithm{Method}) where Method = Method
